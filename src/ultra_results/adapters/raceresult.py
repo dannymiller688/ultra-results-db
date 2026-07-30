@@ -97,6 +97,14 @@ def parse_event_metadata(
         name=event_name,
     )
 
+def parse_contest_duration_hours(contest_key: str) -> int:
+    """'#3_24 Hour' -> 24. Raises if the pattern doesn't match -- fail loudly
+    rather than silently mis-parsing a duration."""
+    match = re.search(r"(\d+)\s*Hour", contest_key)
+    if not match:
+        raise ValueError(f"Could not parse duration from contest key: {contest_key!r}")
+    return int(match.group(1))
+
 
 def parse_results(payload: dict, contest_key: str) -> list[ParsedResult]:
     fields = payload["DataFields"]
@@ -112,20 +120,32 @@ def parse_results(payload: dict, contest_key: str) -> list[ParsedResult]:
         gender = row[idx["GenderMF"]]
         km = row[idx["KM"]]
         time_str = row[idx["TIME"]]
-        done_flag = row[idx['if([Done]=1;"Done";" ")']]
         place_raw = row[idx['WithStatus([OverallRank.p])']]
 
         year_of_birth = None
         if age_raw and age_raw.strip().isdigit():
             year_of_birth = date.today().year - int(age_raw)
 
-        status = "finished" if done_flag.strip() == "Done" else "in_progress"
+        # Status is derived from Place, not from a "done" field -- the exact
+        # expression/casing of done-flag fields varies per raceresult event
+        # (seen: 'if([Done]=1;"Done";" ")' vs 'iif([Chip]=1;"DONE";" ")').
+        # Place is stable: "DNS"/"DNF"/"DQ" text, or a numeric rank.
+        place_clean = (place_raw or "").strip()
+        if place_clean == "DNS":
+            status = "dns"
+        elif place_clean == "DNF":
+            status = "dnf"
+        elif place_clean == "DQ":
+            status = "dq"
+        else:
+            status = "finished"
 
         place = None
-        if place_raw:
-            digits = place_raw.strip().rstrip(".")
-            if digits.isdigit():
-                place = int(digits)
+        digits = place_clean.rstrip(".")
+        if digits.isdigit():
+            place = int(digits)
+
+        distance_m = float(km) * 1000.0 if km and km.strip() else None
 
         athlete = ParsedSourceAthlete(
             source_athlete_key=rr_id,
@@ -141,7 +161,7 @@ def parse_results(payload: dict, contest_key: str) -> list[ParsedResult]:
                 athlete=athlete,
                 status=status,
                 time_s=_parse_time_to_seconds(time_str),
-                distance_m=float(km) * 1000.0 if km else None,
+                distance_m=distance_m,
                 time_kind="official",
                 overall_place=place,
             )
