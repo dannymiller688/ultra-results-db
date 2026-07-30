@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: ultra_results_pg
+    environment:
+      POSTGRES_USER: ultra
+      POSTGRES_PASSWORD: ultra_dev_password
+      POSTGRES_DB: ultra_results
+    ports:
+      - "5432:5432"
+    volumes:
+      - ultra_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ultra -d ultra_results"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ultra_pg_data:
