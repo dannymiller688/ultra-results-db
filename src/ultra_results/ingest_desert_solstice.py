@@ -1,11 +1,13 @@
-"""Ingest Desert Solstice 2022 (event 228232) end to end: results + splits
-for every runner. This is a one-off script; will get folded into a proper
-typer CLI once we have a second event/source to generalize against.
+"""Ingest a raceresult fixed-time event end to end: results + splits for
+every runner. One-off script; will get folded into a proper typer CLI once
+we've proven it generalizes across a couple more events.
 
 Usage:
-    python -m ultra_results.ingest_desert_solstice <event_id> <key>
+    python -m ultra_results.ingest_desert_solstice <event_id> <key> \\
+        <race_name> <event_date YYYY-MM-DD> <duration_hours> <loop_distance_m>
 """
 import sys
+from datetime import date, datetime
 
 from ultra_results.adapters.raceresult import (
     fetch_lap_details,
@@ -26,23 +28,31 @@ from ultra_results.loader import (
     upsert_splits,
 )
 
-LOOP_DISTANCE_M = 400.4  # derived: 252281m / 630 laps for the winner
 
-
-def main(event_id: str, key: str):
+def main(
+    event_id: str,
+    key: str,
+    race_name: str,
+    event_date: date,
+    duration_s: int,
+    loop_distance_m: float,
+):
     conn = get_conn()
 
     source_id = get_or_create_source(conn, "raceresult", "scrape", "https://my.raceresult.com")
-    ingest_run_id = start_ingest_run(conn, source_id, adapter_version="0.1.0")
+    ingest_run_id = start_ingest_run(conn, source_id, adapter_version="0.2.0")
     conn.commit()
 
     payload = fetch_overall_results(event_id, key)
     contest_key = next(iter(payload["data"].keys()))
-    event = parse_event_metadata(payload, contest_key)
-    event.loop_distance_m = LOOP_DISTANCE_M
+    event = parse_event_metadata(
+        event_date=event_date,
+        duration_s=duration_s,
+        loop_distance_m=loop_distance_m,
+    )
     results = parse_results(payload, contest_key)
 
-    race_id = get_or_create_race(conn, "Desert Solstice Track Invitational", country="USA")
+    race_id = get_or_create_race(conn, race_name, country="USA")
     event_id_db = get_or_create_event(conn, race_id, event)
     conn.commit()
 
@@ -53,7 +63,7 @@ def main(event_id: str, key: str):
         conn.commit()
 
         splits_payload = fetch_lap_details(event_id, key, result.athlete.source_athlete_key)
-        splits = parse_splits(splits_payload, result.source_record_id, LOOP_DISTANCE_M)
+        splits = parse_splits(splits_payload, result.source_record_id, loop_distance_m)
         upsert_splits(conn, result_id, splits)
         conn.commit()
         total_splits += len(splits)
@@ -67,4 +77,12 @@ def main(event_id: str, key: str):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2])
+    event_id, key, race_name, event_date_str, duration_hours_str, loop_distance_str = sys.argv[1:7]
+    main(
+        event_id=event_id,
+        key=key,
+        race_name=race_name,
+        event_date=datetime.strptime(event_date_str, "%Y-%m-%d").date(),
+        duration_s=int(float(duration_hours_str) * 3600),
+        loop_distance_m=float(loop_distance_str),
+    )

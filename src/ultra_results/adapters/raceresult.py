@@ -77,13 +77,24 @@ def _normalize_name(name: str) -> str:
     return re.sub(r"\s+", " ", name.strip()).lower()
 
 
-def parse_event_metadata(payload: dict, contest_key: str) -> ParsedEvent:
+def parse_event_metadata(
+    event_date: date,
+    duration_s: int,
+    loop_distance_m: float,
+    event_name: str = "24 Hour",
+) -> ParsedEvent:
+    """Event metadata is not reliably derivable from the results/lap payloads
+    alone (no course-length or event-duration field in either). For now this
+    is supplied by the caller, sourced by a human checking the race's own
+    website/results page. A future improvement would hit raceresult's
+    Settings API to pull this programmatically -- see ADR 0005."""
     return ParsedEvent(
-        event_date=date(2022, 12, 10),
+        event_date=event_date,
         event_type="fixed_time",
-        duration_s=24 * 3600,
-        distance_raw="24 Hour",
-        name="24 Hour",
+        duration_s=duration_s,
+        loop_distance_m=loop_distance_m,
+        distance_raw=event_name,
+        name=event_name,
     )
 
 
@@ -163,7 +174,11 @@ if __name__ == "__main__":
     event_id, key = sys.argv[1], sys.argv[2]
     payload = fetch_overall_results(event_id, key)
     contest_key = next(iter(payload["data"].keys()))
-    event = parse_event_metadata(payload, contest_key)
+    event = parse_event_metadata(
+        event_date=date(2022, 12, 10),
+        duration_s=24 * 3600,
+        loop_distance_m=400.4,
+    )
     results = parse_results(payload, contest_key)
     print(f"Parsed event: {event}")
     print(f"Parsed {len(results)} results")

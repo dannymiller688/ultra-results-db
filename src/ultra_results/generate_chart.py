@@ -143,7 +143,7 @@ document.getElementById('baseline').addEventListener('input', (e) => {{
 """
 
 
-def fetch_runner_splits(conn, race_name: str):
+def fetch_runner_splits(conn, race_name: str, event_date: str):
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -153,10 +153,10 @@ def fetch_runner_splits(conn, race_name: str):
             JOIN core.source_athletes sa ON sa.id = r.source_athlete_id
             JOIN core.events e ON e.id = r.event_id
             JOIN core.races ra ON ra.id = e.race_id
-            WHERE ra.name = %s
+            WHERE ra.name = %s AND e.event_date = %s
             ORDER BY sa.name_raw, sp.seq
             """,
-            (race_name,),
+            (race_name, event_date),
         )
         rows = cur.fetchall()
 
@@ -169,9 +169,9 @@ def fetch_runner_splits(conn, race_name: str):
     return [{"name": n, "points": pts} for n, pts in runners.items()], duration_s
 
 
-def main(race_name: str, out_path: str, top_n: int = 8):
+def main(race_name: str, event_date: str, out_path: str, top_n: int = 8):
     conn = get_conn()
-    runner_data, duration_s = fetch_runner_splits(conn, race_name)
+    runner_data, duration_s = fetch_runner_splits(conn, race_name, event_date)
     conn.close()
 
     if not runner_data:
@@ -182,7 +182,7 @@ def main(race_name: str, out_path: str, top_n: int = 8):
     runner_data = runner_data[:top_n]
 
     html = HTML_TEMPLATE.format(
-        title=f"{race_name} — Cumulative Distance vs Time",
+        title=f"{race_name} ({event_date}) — Cumulative Distance vs Time",
         runner_data_json=json.dumps(runner_data),
         duration_seconds=duration_s,
         duration_hours=round(duration_s / 3600, 2),
@@ -196,5 +196,6 @@ def main(race_name: str, out_path: str, top_n: int = 8):
 
 if __name__ == "__main__":
     race_name = sys.argv[1] if len(sys.argv) > 1 else "Desert Solstice Track Invitational"
-    out_path = sys.argv[2] if len(sys.argv) > 2 else "web/chart.html"
-    main(race_name, out_path)
+    event_date = sys.argv[2] if len(sys.argv) > 2 else "2022-12-10"
+    out_path = sys.argv[3] if len(sys.argv) > 3 else "web/chart.html"
+    main(race_name, event_date, out_path)
